@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -27,6 +27,18 @@ namespace SEOTools
           HelpText = "Path to the folder or file for writing content.")]
         public string OutPath { get; set; }
 
+        [Option('s', "subpath", Required = false,
+          HelpText = "Path to the folder for subtracting.")]
+        public string SubPath { get; set; }
+
+        [Option('q', "quality", DefaultValue = "85",
+          HelpText = "Quality for compressing image.")]
+        public string Quality { get; set; }
+
+        [Option('t', "tool", DefaultValue = "C",
+          HelpText = "Caesium or ImageMagick.")]
+        public string Tool { get; set; }
+
         [Option('v', "verbose", DefaultValue = true,
           HelpText = "Prints all messages to standard output.")]
         public bool Verbose { get; set; }
@@ -42,40 +54,92 @@ namespace SEOTools
         }
     }
 
-    class Caesium
+    class ImageCompressor
     {
         string OutPath;
+        string SubPath;
+        string Quality;
+        string Tool;
         List<string> imageFiles = null;
 
-        public Caesium(List<string> files, string o)
+        public ImageCompressor(List<string> files, string o, string s, string q, string t)
         {
-            OutPath = o;
+            OutPath = o; SubPath = s; Quality = q; Tool = t;
             imageFiles = files;
         }
 
         public void Compress()
         {
-            Console.WriteLine("Image: {0}", OutPath);
-            for (int i = 0; i < imageFiles.Count; i++)
+            Console.WriteLine("OutPath: {0}", OutPath);
+            if (!Directory.Exists(OutPath))
             {
-                Console.WriteLine("Image: {0}", imageFiles[i]);
-                string d = Directory.GetCurrentDirectory();
-                Process p = new Process();
-                p.StartInfo.FileName = d + @"\caesiumclt.exe";
-                p.StartInfo.Arguments = " -q 0 -e -o \"" + OutPath + "\" \"" + imageFiles[i] + "\"";
-                p.StartInfo.WorkingDirectory = d;
-                p.Start();
+                Console.WriteLine("Not found OutPath!");
+                return;
             }
+            string BackupFolder = OutPath + @"\backup";
+            if (!Directory.Exists(BackupFolder)) Directory.CreateDirectory(BackupFolder);
+            try
+            {
+                for (int i = 0; i < imageFiles.Count; i++)
+                {
+                    Console.WriteLine("Image: {0}", imageFiles[i]);
+
+                    //backup it
+                    string subfolder = BackupFolder + Path.GetDirectoryName(imageFiles[i]).Substring(SubPath.Length);
+                    if (!Directory.Exists(subfolder)) Directory.CreateDirectory(subfolder);
+                    string filename = @"\" + Path.GetFileName(imageFiles[i]);
+                    if(!File.Exists(subfolder + filename)) File.Copy(imageFiles[i], subfolder + filename);
+
+                    string d = Directory.GetCurrentDirectory();
+                    Process p = new Process();
+                    p.StartInfo.FileName = Tool == "C" ? d + @"\caesiumclt.exe" : d + @"\convert.exe";
+                    //p.StartInfo.Arguments = " -q 0 -e -o \"" + OutPath + "\" \"" + imageFiles[i] + "\"";
+                    p.StartInfo.Arguments = GetArguments(imageFiles[i], filename);
+                    p.StartInfo.WorkingDirectory = d;
+                    p.StartInfo.CreateNoWindow = true;
+                    p.StartInfo.UseShellExecute = false;
+                    p.Start();
+                    p.WaitForExit();
+
+                    //copy overwrite to the original
+                    File.Copy(OutPath + filename, imageFiles[i], true);
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Console.WriteLine(ex.Message);
+            }
+        }
+
+        private string GetArguments(string fullfilepath, string filename)
+        {
+            string agrs = "";
+            if (filename.ToLower().EndsWith(".png"))
+            {
+                if (Tool == "C")
+                    agrs = " -q 0 -e -o \"" + OutPath + "\" \"" + fullfilepath + "\"";
+                else
+                    agrs = " \"" + fullfilepath + "\" -strip " + "\"" + OutPath + filename + "\"";
+            }
+            else //jpeg
+            {
+                if (Tool == "C")
+                    agrs = " -q " + Quality + " -e -o \"" + OutPath + "\" \"" + fullfilepath + "\"";
+                else
+                    agrs = " \"" + fullfilepath + "\" -sampling-factor 4:2:0 -strip -quality " + Quality
+                           + " -interlace JPEG -colorspace sRGB " + "\"" + OutPath + filename + "\"";
+            }
+            return agrs;
         }
     }
 
-    class Compressor
+    class CssJsCompressor
     {
         bool BackupOverwrite;
         string BackupSuffix;
         List<string> cssjsFiles = null;
 
-        public Compressor(string m, string i, List<string> files)
+        public CssJsCompressor(string m, string i, List<string> files)
         {
             BackupSuffix = ConfigurationManager.AppSettings["BackupSuffix"];
             BackupOverwrite = ConfigurationManager.AppSettings["BackupOverwrite"] == "1" ? true : false;
@@ -164,7 +228,7 @@ namespace SEOTools
                 if(options.OutPath == "XXX") options.OutPath = ConfigurationManager.AppSettings["DefaultOutPath"];
 
                 List<string> iFiles = new List<string>();
-                if (options.Mode == "FI") iFiles = File.ReadAllLines(options.InPath).ToList();
+                if (options.Mode.ToUpper() == "FI") iFiles = File.ReadAllLines(options.InPath).ToList();
                 else GetFiles(options.InPath, iFiles);
 
                 if (iFiles.Count < 1)
@@ -181,20 +245,23 @@ namespace SEOTools
                 {
                     if (!file.Contains(backup) && !file.Contains(".min.") && (file.ToLower().EndsWith(".css") || file.ToLower().EndsWith(".js")))
                         cssjsFiles.Add(file);
-                    else if (!file.Contains(backup) && (file.ToLower().EndsWith(".png") || file.ToLower().EndsWith(".jpg")))
+                    else if (!file.Contains(backup) && (file.ToLower().EndsWith(".png") || file.ToLower().EndsWith(".jpg")
+                        || file.ToLower().EndsWith(".jpeg")))
                         imageFiles.Add(file);
                 }
 
                 if(cssjsFiles.Count > 0)
                 {
-                    Compressor c = new Compressor(options.Mode, options.InPath, cssjsFiles);
-                    c.Compress();
+                    CssJsCompressor cjc = new CssJsCompressor(options.Mode, options.InPath, cssjsFiles);
+                    cjc.Compress();
                 }
 
                 if(imageFiles.Count > 0)
                 {
-                    Caesium c = new Caesium(imageFiles, options.OutPath);
-                    c.Compress();
+                    string s = options.SubPath;
+                    if (string.IsNullOrWhiteSpace(s)) s = options.InPath;
+                    ImageCompressor ic = new ImageCompressor(imageFiles, options.OutPath,  s, options.Quality, options.Tool);
+                    ic.Compress();
                 }
             }
 
