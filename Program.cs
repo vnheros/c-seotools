@@ -24,7 +24,7 @@ namespace SEOTools
         public string InPath { get; set; }
 
         [Option('o', "outputpath", DefaultValue = "XXX",
-          HelpText = "Path to the folder or file for writing content.")]
+          HelpText = "Path to the folder or file for writing content. XXX: get output folder from config file.")]
         public string OutPath { get; set; }
 
         [Option('s', "subpath", Required = false,
@@ -36,7 +36,7 @@ namespace SEOTools
         public string Quality { get; set; }
 
         [Option('t', "tool", DefaultValue = "C",
-          HelpText = "Caesium or ImageMagick.")]
+          HelpText = "C: Caesium or I: ImageMagick.")]
         public string Tool { get; set; }
 
         [Option('v', "verbose", DefaultValue = true,
@@ -68,6 +68,9 @@ namespace SEOTools
             imageFiles = files;
         }
 
+        //https://social.msdn.microsoft.com/Forums/en-US/3fd871ee-8823-4f00-b40c-fc81681c3f27/how-to-exit-the-process-in-c-after-it-hangs?forum=csharplanguage
+        //https://stackoverflow.com/questions/18707150/does-process-kill-terminate-the-waitforexit-with-no-time-limit
+        //c# process kill waitforexit
         public void Compress()
         {
             Console.WriteLine("OutPath: {0}", OutPath);
@@ -200,10 +203,19 @@ namespace SEOTools
 
     class Program
     {
-        static void GetFiles(string folder, List<string> files)
+        static void GetFiles(string folder, List<string> files, bool firstrun = true)
         {
             try
             {
+                if(firstrun)
+                {
+                    foreach (string f in Directory.GetFiles(folder))
+                    {
+                        Console.WriteLine(f);
+                        files.Add(f);
+                    }
+                }
+
                 foreach (string d in Directory.GetDirectories(folder))
                 {
                     foreach (string f in Directory.GetFiles(d))
@@ -211,7 +223,7 @@ namespace SEOTools
                         Console.WriteLine(f);
                         files.Add(f);
                     }
-                    GetFiles(d, files);
+                    GetFiles(d, files, false);
                 }
             }
             catch (System.Exception ex)
